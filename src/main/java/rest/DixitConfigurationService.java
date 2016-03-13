@@ -16,7 +16,8 @@ import java.util.List;
 @Path("/service")
 public class DixitConfigurationService {
     public static final String ROOM_NAME_COLUMN = "name";
-    public static final String GET_ROOMS_QUERY = "select " + ROOM_NAME_COLUMN + " from rooms";
+    public static final String ROOM_ID_COLUMN = "id";
+    public static final String GET_ROOMS_QUERY = "select " + ROOM_NAME_COLUMN + ", " + ROOM_ID_COLUMN + " from rooms";
     public static final String PLAYER_NAME_COLUMN = "player_name";
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN +
                                                             " FROM players_to_rooms WHERE " +
@@ -25,6 +26,7 @@ public class DixitConfigurationService {
     public static final String JOIN_USER_QUERY = "insert into players_to_rooms (select ?, ?,  " +
                                                  "max(player_index) + 1  from players_to_rooms where room_id = 1)";
     public static final String NEW_ROOM_QUERY = "insert into rooms (name) values (?)";
+
 
     @POST
     @Consumes(MediaType.TEXT_PLAIN)
@@ -93,6 +95,7 @@ public class DixitConfigurationService {
             ResultSet rs = con.createStatement().executeQuery(GET_ROOMS_QUERY);
             while (rs.next()) {
                  allRooms.add(rs.getString(ROOM_NAME_COLUMN));
+                 allRooms.add(rs.getString(ROOM_ID_COLUMN));
             }
 
         } catch (SQLException e) {
