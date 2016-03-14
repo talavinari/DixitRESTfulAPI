@@ -17,7 +17,7 @@ import java.util.List;
 public class DixitConfigurationService {
     public static final String ROOM_NAME_COLUMN = "name";
     public static final String ROOM_ID_COLUMN = "id";
-    public static final String GET_ROOMS_QUERY = "select " + ROOM_NAME_COLUMN + ", " + ROOM_ID_COLUMN + " from rooms";
+    public static final String GET_ROOMS_QUERY = "select " + ROOM_NAME_COLUMN  + " from rooms";
     public static final String PLAYER_NAME_COLUMN = "player_name";
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN +
                                                             " FROM players_to_rooms WHERE " +
