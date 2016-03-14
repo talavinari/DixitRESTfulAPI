@@ -95,7 +95,6 @@ public class DixitConfigurationService {
             ResultSet rs = con.createStatement().executeQuery(GET_ROOMS_QUERY);
             while (rs.next()) {
                  allRooms.add(rs.getString(ROOM_NAME_COLUMN));
-                 allRooms.add(rs.getString(ROOM_ID_COLUMN));
             }
 
         } catch (SQLException e) {
