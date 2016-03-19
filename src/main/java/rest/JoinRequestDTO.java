@@ -1,5 +1,7 @@
 package rest;
 
+import org.codehaus.jackson.annotate.JacksonAnnotation;
+
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
 
@@ -14,3 +16,6 @@ public class JoinRequestDTO {
     @XmlElement
     public String roomName;
 }
+
+
+
