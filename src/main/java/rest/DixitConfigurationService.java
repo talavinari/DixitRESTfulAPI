@@ -33,12 +33,12 @@ public class DixitConfigurationService {
 
 
     @POST
-    @Consumes(MediaType.TEXT_PLAIN)
+    @Consumes(MediaType.APPLICATION_JSON)
     @Path("addRoom/")
-    public void addRoom(String roomName) {
+    public void addRoom(JoinRequestDTO joinRequestDTO) {
         try {
             PreparedStatement preparedStatement = getConnection().prepareStatement(NEW_ROOM_QUERY);
-            preparedStatement.setString(1, roomName);
+            preparedStatement.setString(1, joinRequestDTO.roomName);
             preparedStatement.execute();
         } catch (SQLException e) {
             e.printStackTrace();
