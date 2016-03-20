@@ -5,6 +5,8 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.HttpClientBuilder;
 
+import org.codehaus.jackson.annotate.JsonProperty;
+
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
@@ -36,6 +38,8 @@ public class DixitConfigurationService {
     public static final String JOIN_USER_QUERY = "insert into players_to_rooms (select ?, ?,  " +
                                                  "max(player_index) + 1  from players_to_rooms where room_id = 1)";
     public static final String NEW_ROOM_QUERY = "insert into rooms (name) values (?)";
+    public static final String REMOVE_PLAYER_FROM_ROOM = "delete from players_to_rooms where player_name like ? and room_id = ?";
+    public static final String REMOVE_ROOM = "delete from rooms where room_name like ?";
 
     @POST
     @Consumes(MediaType.TEXT_PLAIN)
@@ -57,12 +61,44 @@ public class DixitConfigurationService {
     }
 
     @POST
-    @Consumes(MediaType.TEXT_PLAIN)
+    @Consumes(MediaType.APPLICATION_JSON)
     @Path("addRoom/")
-    public void addRoom(String roomName) {
+    public void addRoom(JoinRequestDTO joinRequestDTO) {
         try {
             PreparedStatement preparedStatement = getConnection().prepareStatement(NEW_ROOM_QUERY);
+            preparedStatement.setString(1, joinRequestDTO.roomName);
+            preparedStatement.execute();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @POST
+    @Consumes(MediaType.TEXT_PLAIN)
+    @Path("removeRoom/")
+    public void removeRoom(String roomName) {
+        try {
+            PreparedStatement preparedStatement = getConnection().prepareStatement(REMOVE_ROOM);
             preparedStatement.setString(1, roomName);
+            preparedStatement.execute();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("removePlayer/")
+    public void removePlayer(JoinRequestDTO jrdto) {
+        try {
+            int roomId = getRoomIdByName(jrdto.roomName);
+            PreparedStatement preparedStatement = getConnection().prepareStatement(REMOVE_PLAYER_FROM_ROOM);
+            preparedStatement.setString(1, jrdto.nickName);
+            preparedStatement.setString(2, Integer.toString(roomId));
             preparedStatement.execute();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -75,10 +111,11 @@ public class DixitConfigurationService {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("join/")
     public void joinRoom(JoinRequestDTO joinRequestDTO) {
+    //public void joinRoom(String roomName, String nickName) {
         try {
             int roomId = getRoomIdByName(joinRequestDTO.roomName);
             PreparedStatement preparedStatement = getConnection().prepareStatement(JOIN_USER_QUERY);
-            preparedStatement.setInt(1, roomId);
+            preparedStatement.setString(1, Integer.toString(roomId));
             preparedStatement.setString(2, joinRequestDTO.nickName);
             preparedStatement.execute();
         } catch (SQLException e) {
@@ -89,9 +126,10 @@ public class DixitConfigurationService {
     }
 
     @GET
-    @Path("/players/{roomName}")
+    @Path("players/{roomName}")
     @Produces({ MediaType.APPLICATION_JSON})
     public List<String> getPlayersInRoom(@PathParam("roomName") String roomName) {
+        roomName = parseUrl(roomName);
         List<String> players = new ArrayList<String>();
         try {
             Connection con = getConnection();
@@ -110,6 +148,65 @@ public class DixitConfigurationService {
         }
 
         return players;
+    }
+
+
+
+
+    @Consumes(MediaType.TEXT_PLAIN)
+    @POST
+    @Path("players/")
+    @Produces({ MediaType.APPLICATION_JSON})
+    public List<String> getPlayersInRoom2(String roomName) {
+        List<String> players = new ArrayList<String>();
+        try {
+            Connection con = getConnection();
+            int roomId = getRoomIdByName(roomName);
+            PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
+            preparedStatement.setInt(1, roomId);
+            ResultSet rs = preparedStatement.executeQuery();
+            while (rs.next()) {
+                players.add(rs.getString(PLAYER_NAME_COLUMN));
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+
+        return players;
+    }
+
+
+    @Consumes(MediaType.TEXT_PLAIN)
+    @POST
+    @Path("countPlayers/")
+    @Produces({ MediaType.APPLICATION_JSON})
+    public boolean isRoomHasPlayers(String roomName) {
+        List<String> players = new ArrayList<String>();
+        try {
+            Connection con = getConnection();
+            int roomId = getRoomIdByName(roomName);
+            PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
+            preparedStatement.setInt(1, roomId);
+            ResultSet rs = preparedStatement.executeQuery();
+            while (rs.next()) {
+                players.add(rs.getString(PLAYER_NAME_COLUMN));
+            }
+            if (players.size() > 0){
+                return true;
+            }else{
+                return false;
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+
+        return false;
     }
 
     @GET
@@ -177,5 +274,9 @@ public class DixitConfigurationService {
         } finally {
             httpClient.getConnectionManager().shutdown(); //Deprecated
         }
+    }
+
+    private String parseUrl(String url){
+        return url.replace('+',' ');
     }
 }
