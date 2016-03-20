@@ -1,5 +1,10 @@
 package rest;
 
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClientBuilder;
+
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
@@ -11,11 +16,16 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Path("/service")
 public class DixitConfigurationService {
     public static final String ROOM_NAME_COLUMN = "name";
+    public static final String APIKey= "AIzaSyDnv6KNfOy08cZiBKVOn6yYPBo5qWaYTJY";
+    //public static final String APIKey= "AIzaSyBqGEWSkT0G9cvzDunEQv8UU13ylkZj0so";
+
     public static final String ROOM_ID_COLUMN = "id";
     public static final String GET_ROOMS_QUERY = "select " + ROOM_NAME_COLUMN  + " from rooms";
     public static final String PLAYER_NAME_COLUMN = "player_name";
@@ -27,6 +37,24 @@ public class DixitConfigurationService {
                                                  "max(player_index) + 1  from players_to_rooms where room_id = 1)";
     public static final String NEW_ROOM_QUERY = "insert into rooms (name) values (?)";
 
+    @POST
+    @Consumes(MediaType.TEXT_PLAIN)
+    @Path("sendToken/")
+    public void notifyToken(String token) {
+        String s = token;
+    }
+
+    @POST
+    @Consumes(MediaType.TEXT_PLAIN)
+    @Path("{roomName}/sendAssociation/")
+    public void sendAssociation(String association , @PathParam("roomName") String roomName) {
+        try {
+            //sendToTopic(roomName, association);
+            sendSimple(roomName,association);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     @POST
     @Consumes(MediaType.TEXT_PLAIN)
@@ -124,5 +152,30 @@ public class DixitConfigurationService {
         }
 
         return roomId;
+    }
+
+    private void sendSimple(String topicName, String association){
+        HttpClient httpClient = HttpClientBuilder.create().build(); //Use this instead
+
+        String json = "{ " +
+                "\"to\": \"/topics/" + topicName + "\", " +
+                " \"data\": { " +
+                "\"message\": \"This is a GCM Topic Message!" + association + "\" " +
+                "}}";
+
+        try {
+            HttpPost request = new HttpPost("https://gcm-http.googleapis.com/gcm/send");
+            StringEntity params =new StringEntity(json);
+            request.addHeader("content-type", "application/json");
+            request.addHeader("Authorization", "key="+APIKey);
+            request.setEntity(params);
+            httpClient.execute(request);
+
+            // handle response here...
+        }catch (Exception ex) {
+            // handle exception here
+        } finally {
+            httpClient.getConnectionManager().shutdown(); //Deprecated
+        }
     }
 }
