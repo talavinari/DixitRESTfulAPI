@@ -5,7 +5,8 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.HttpClientBuilder;
 
-import org.codehaus.jackson.annotate.JsonProperty;
+import org.codehaus.jettison.json.JSONException;
+import org.codehaus.jettison.json.JSONObject;
 
 import javax.naming.Context;
 import javax.naming.InitialContext;
@@ -17,29 +18,41 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Path("/service")
 public class DixitConfigurationService {
-    public static final String ROOM_NAME_COLUMN = "name";
-    public static final String APIKey= "AIzaSyDnv6KNfOy08cZiBKVOn6yYPBo5qWaYTJY";
-    //public static final String APIKey= "AIzaSyBqGEWSkT0G9cvzDunEQv8UU13ylkZj0so";
-
-    public static final String ROOM_ID_COLUMN = "id";
-    public static final String GET_ROOMS_QUERY = "select " + ROOM_NAME_COLUMN  + " from rooms";
+    public static final String ROOM_NAME_COLUMN = "room_name";
+    public static final String CARD_COLUMN = "cards";
     public static final String PLAYER_NAME_COLUMN = "player_name";
+
+    public static final int TOTAL_CARDS_NUM = 256;
+    public static final String DIXIT_TABLE = " DXT_MAIN ";
+
+
+    public static final String APIKey = "AIzaSyDnv6KNfOy08cZiBKVOn6yYPBo5qWaYTJY";
+    //public static final String APIKey= "AIzaSyBqGEWSkT0G9cvzDunEQv8UU13ylkZj0so";
+    public static final String GET_ROOMS_QUERY = "select distinct room_name" + ROOM_NAME_COLUMN + " from rooms";
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN +
-                                                            " FROM players_to_rooms WHERE " +
-                                                            " room_id = ?";
-    public static final String GET_ROOM_ID_QUERY = "select id from rooms where " + ROOM_NAME_COLUMN + " = ?";
-    public static final String JOIN_USER_QUERY = "insert into players_to_rooms (select ?, ?,  " +
-                                                 "max(player_index) + 1  from players_to_rooms where room_id = 1)";
-    public static final String NEW_ROOM_QUERY = "insert into rooms (name) values (?)";
-    public static final String REMOVE_PLAYER_FROM_ROOM = "delete from players_to_rooms where player_name like ? and room_id = ?";
-    public static final String REMOVE_ROOM = "delete from rooms where room_name like ?";
+                            " FROM " + DIXIT_TABLE + " WHERE " +
+                            ROOM_NAME_COLUMN + " like ?";
+
+    public static final String GET_CARD_FOR_PLAYER = "SELECT " + CARD_COLUMN +
+            " FROM " + DIXIT_TABLE + " WHERE " +
+            ROOM_NAME_COLUMN + " like  ?";
+    public static final String UPDATE_CARDS = "update " + DIXIT_TABLE + " set " + CARD_COLUMN + " = ?" +
+            " where " + ROOM_NAME_COLUMN + " like ? and " + PLAYER_NAME_COLUMN + " like ?";
+    public static final String AFTER_FIRST_JOIN_ROOM_QUERY = "insert into " + DIXIT_TABLE + " (select ?, ?,  " +
+            "max(player_index) + 1, ''  from " + DIXIT_TABLE + " where " + ROOM_NAME_COLUMN + " like ?)";
+
+    public static final String FIRST_JOIN_ROOM_QUERY = "insert into " + DIXIT_TABLE +
+            "values (?, ?,  1, '')";
+
+    public static final String REMOVE_PLAYER_FROM_ROOM = "delete from " + DIXIT_TABLE + " " +
+            "where " + PLAYER_NAME_COLUMN + " like ?" +
+            " and  " + ROOM_NAME_COLUMN + " like ?";
+
+    public static Random rnd = new Random();
 
     @POST
     @Consumes(MediaType.TEXT_PLAIN)
@@ -49,12 +62,12 @@ public class DixitConfigurationService {
     }
 
     @POST
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Path("{roomName}/sendAssociation/")
-    public void sendAssociation(String association , @PathParam("roomName") String roomName) {
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("sendAssociation/")
+    public void sendAssociation(AssociationNotifyDTO associationNotifyDTO) {
         try {
-            //sendToTopic(roomName, association);
-            sendSimple(roomName,association);
+            sendSimple(associationNotifyDTO.requestBasicDTO.roomName
+                    , associationNotifyDTO.association);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -63,42 +76,28 @@ public class DixitConfigurationService {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("addRoom/")
-    public void addRoom(JoinRequestDTO joinRequestDTO) {
+    public void addRoom(BasicRequestDTO dto) {
         try {
-            PreparedStatement preparedStatement = getConnection().prepareStatement(NEW_ROOM_QUERY);
-            preparedStatement.setString(1, joinRequestDTO.roomName);
+            PreparedStatement preparedStatement = getConnection().prepareStatement(FIRST_JOIN_ROOM_QUERY);
+            preparedStatement.setString(1, dto.roomName);
+            preparedStatement.setString(2, dto.nickName);
             preparedStatement.execute();
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
             e.printStackTrace();
         }
-    }
 
-    @POST
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Path("removeRoom/")
-    public void removeRoom(String roomName) {
-        try {
-            PreparedStatement preparedStatement = getConnection().prepareStatement(REMOVE_ROOM);
-            preparedStatement.setString(1, roomName);
-            preparedStatement.execute();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
-        }
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("removePlayer/")
-    public void removePlayer(JoinRequestDTO jrdto) {
+    public void removePlayer(BasicRequestDTO jrdto) {
         try {
-            int roomId = getRoomIdByName(jrdto.roomName);
             PreparedStatement preparedStatement = getConnection().prepareStatement(REMOVE_PLAYER_FROM_ROOM);
             preparedStatement.setString(1, jrdto.nickName);
-            preparedStatement.setString(2, Integer.toString(roomId));
+            preparedStatement.setString(2, jrdto.roomName);
             preparedStatement.execute();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -110,13 +109,12 @@ public class DixitConfigurationService {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("join/")
-    public void joinRoom(JoinRequestDTO joinRequestDTO) {
-    //public void joinRoom(String roomName, String nickName) {
+    public void joinRoom(BasicRequestDTO dto) {
         try {
-            int roomId = getRoomIdByName(joinRequestDTO.roomName);
-            PreparedStatement preparedStatement = getConnection().prepareStatement(JOIN_USER_QUERY);
-            preparedStatement.setString(1, Integer.toString(roomId));
-            preparedStatement.setString(2, joinRequestDTO.nickName);
+            PreparedStatement preparedStatement = getConnection().prepareStatement(AFTER_FIRST_JOIN_ROOM_QUERY);
+            preparedStatement.setString(1, dto.roomName);
+            preparedStatement.setString(2, dto.nickName);
+            preparedStatement.setString(3, dto.roomName);
             preparedStatement.execute();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -127,15 +125,14 @@ public class DixitConfigurationService {
 
     @GET
     @Path("players/{roomName}")
-    @Produces({ MediaType.APPLICATION_JSON})
+    @Produces({MediaType.APPLICATION_JSON})
     public List<String> getPlayersInRoom(@PathParam("roomName") String roomName) {
         roomName = parseUrl(roomName);
         List<String> players = new ArrayList<String>();
         try {
             Connection con = getConnection();
-            int roomId = getRoomIdByName(roomName);
             PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
-            preparedStatement.setInt(1, roomId);
+            preparedStatement.setString(1, roomName);
             ResultSet rs = preparedStatement.executeQuery();
             while (rs.next()) {
                 players.add(rs.getString(PLAYER_NAME_COLUMN));
@@ -148,70 +145,11 @@ public class DixitConfigurationService {
         }
 
         return players;
-    }
-
-
-
-
-    @Consumes(MediaType.TEXT_PLAIN)
-    @POST
-    @Path("players/")
-    @Produces({ MediaType.APPLICATION_JSON})
-    public List<String> getPlayersInRoom2(String roomName) {
-        List<String> players = new ArrayList<String>();
-        try {
-            Connection con = getConnection();
-            int roomId = getRoomIdByName(roomName);
-            PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
-            preparedStatement.setInt(1, roomId);
-            ResultSet rs = preparedStatement.executeQuery();
-            while (rs.next()) {
-                players.add(rs.getString(PLAYER_NAME_COLUMN));
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
-        }
-
-        return players;
-    }
-
-
-    @Consumes(MediaType.TEXT_PLAIN)
-    @POST
-    @Path("countPlayers/")
-    @Produces({ MediaType.APPLICATION_JSON})
-    public boolean isRoomHasPlayers(String roomName) {
-        List<String> players = new ArrayList<String>();
-        try {
-            Connection con = getConnection();
-            int roomId = getRoomIdByName(roomName);
-            PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
-            preparedStatement.setInt(1, roomId);
-            ResultSet rs = preparedStatement.executeQuery();
-            while (rs.next()) {
-                players.add(rs.getString(PLAYER_NAME_COLUMN));
-            }
-            if (players.size() > 0){
-                return true;
-            }else{
-                return false;
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
-        }
-
-        return false;
     }
 
     @GET
     @Path("/rooms")
-    @Produces({ MediaType.APPLICATION_JSON})
+    @Produces({MediaType.APPLICATION_JSON})
     public List<String> getRooms() {
 
         List<String> allRooms = new ArrayList<String>();
@@ -219,7 +157,7 @@ public class DixitConfigurationService {
             Connection con = getConnection();
             ResultSet rs = con.createStatement().executeQuery(GET_ROOMS_QUERY);
             while (rs.next()) {
-                 allRooms.add(rs.getString(ROOM_NAME_COLUMN));
+                allRooms.add(rs.getString(ROOM_NAME_COLUMN));
             }
 
         } catch (SQLException e) {
@@ -229,7 +167,6 @@ public class DixitConfigurationService {
         }
 
         return allRooms;
-//        return Response.status(200).entity(allRooms).build();
     }
 
     private Connection getConnection() throws NamingException, SQLException {
@@ -239,19 +176,7 @@ public class DixitConfigurationService {
         return ds.getConnection();
     }
 
-    private int getRoomIdByName(String roomName) throws SQLException , NamingException {
-        PreparedStatement preparedStatement = getConnection().prepareStatement(GET_ROOM_ID_QUERY);
-        preparedStatement.setString(1, roomName);
-        ResultSet rs = preparedStatement.executeQuery();
-        int roomId = -1;
-        while (rs.next()) {
-            roomId = rs.getInt("id");
-        }
-
-        return roomId;
-    }
-
-    private void sendSimple(String topicName, String association){
+    private void sendSimple(String topicName, String association) {
         HttpClient httpClient = HttpClientBuilder.create().build(); //Use this instead
 
         String json = "{ " +
@@ -262,21 +187,80 @@ public class DixitConfigurationService {
 
         try {
             HttpPost request = new HttpPost("https://gcm-http.googleapis.com/gcm/send");
-            StringEntity params =new StringEntity(json);
-            request.addHeader("content-type", "application/json");
-            request.addHeader("Authorization", "key="+APIKey);
+            StringEntity params = new StringEntity(json);
+            request.addHeader("content-type", MediaType.APPLICATION_JSON);
+            request.addHeader("Authorization", "key=" + APIKey);
             request.setEntity(params);
             httpClient.execute(request);
 
             // handle response here...
-        }catch (Exception ex) {
+        } catch (Exception ex) {
             // handle exception here
         } finally {
             httpClient.getConnectionManager().shutdown(); //Deprecated
         }
     }
 
-    private String parseUrl(String url){
-        return url.replace('+',' ');
+    private String parseUrl(String url) {
+        return url.replace('+', ' ');
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("cards/")
+    public String getRandomCards(CardRequestDTO cardRequestDTO) throws SQLException, NamingException, JSONException {
+        JSONObject json = new JSONObject();
+
+        PreparedStatement preparedStatement = getConnection().prepareStatement(GET_CARD_FOR_PLAYER);
+        preparedStatement.setString(1, cardRequestDTO.requestBasicDTO.roomName);
+        ResultSet rs = preparedStatement.executeQuery();
+        Set<Integer> existingNumbers = new HashSet<Integer>();
+        while (rs.next()) {
+            String string = rs.getString(CARD_COLUMN);
+            String[] split = string.split(",");
+            for (String s : split) {
+                if (!s.trim().equals("")) {
+                    existingNumbers.add(Integer.valueOf(s));
+                }
+            }
+        }
+
+        int[] newCards = new int[cardRequestDTO.cardNumberRequest];
+        for (int i = 0; i < cardRequestDTO.cardNumberRequest; i++) {
+            boolean found = false;
+            while (!found) {
+                int randomCard = rnd.nextInt(TOTAL_CARDS_NUM);
+                if (!existingNumbers.contains(randomCard)) {
+                    found = true;
+                }
+                newCards[i] = randomCard;
+                json.put("CARD" + i, randomCard);
+            }
+
+        }
+
+        updateCardToDB(newCards,
+                cardRequestDTO.requestBasicDTO.roomName,
+                cardRequestDTO.requestBasicDTO.roomName);
+
+        return json.toString();
+    }
+
+    private void updateCardToDB(int[] newCards, String roomName, String userName) {
+        String cardInDb = Arrays.toString(newCards);
+        cardInDb = cardInDb.replace("[", "").replace("]", "");
+
+        try {
+            PreparedStatement preparedStatement = getConnection().prepareStatement(UPDATE_CARDS);
+            preparedStatement.setString(1, cardInDb);
+            preparedStatement.setString(2, roomName);
+            preparedStatement.setString(3, userName);
+            preparedStatement.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
     }
 }
