@@ -6,7 +6,6 @@ import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.HttpClientBuilder;
 
 import org.codehaus.jettison.json.JSONException;
-import org.codehaus.jettison.json.JSONObject;
 
 import javax.naming.Context;
 import javax.naming.InitialContext;
@@ -75,19 +74,24 @@ public class DixitConfigurationService {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
     @Path("addRoom/")
-    public void addRoom(BasicRequestDTO dto) {
+    public List<String> addRoom(BasicRequestDTO dto) {
         try {
             PreparedStatement preparedStatement = getConnection().prepareStatement(FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
             preparedStatement.execute();
+            return getRandomCards(new CardRequestDTO(dto, 6));
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
             e.printStackTrace();
+        } catch (JSONException e) {
+            e.printStackTrace();
         }
 
+        return null;
     }
 
     @POST
