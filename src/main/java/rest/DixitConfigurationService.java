@@ -31,7 +31,7 @@ public class DixitConfigurationService {
 
     public static final String APIKey = "AIzaSyDnv6KNfOy08cZiBKVOn6yYPBo5qWaYTJY";
     //public static final String APIKey= "AIzaSyBqGEWSkT0G9cvzDunEQv8UU13ylkZj0so";
-    public static final String GET_ROOMS_QUERY = "select distinct " + ROOM_NAME_COLUMN + " from " + DIXIT_TABLE;
+    public static final String GET_ROOMS_QUERY = "select distinct " + ROOM_NAME_COLUMN + " from " + DIXIT_TABLE + " group by " + ROOM_NAME_COLUMN + " having count(*) < 4";
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN +
                             " FROM " + DIXIT_TABLE + " WHERE " +
                             ROOM_NAME_COLUMN + " like ?";
