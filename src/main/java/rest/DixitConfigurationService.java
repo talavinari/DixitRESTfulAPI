@@ -32,7 +32,7 @@ public class DixitConfigurationService {
 
     public static final String APIKey = "AIzaSyDnv6KNfOy08cZiBKVOn6yYPBo5qWaYTJY";
     //public static final String APIKey= "AIzaSyBqGEWSkT0G9cvzDunEQv8UU13ylkZj0so";
-    public static final String GET_ROOMS_QUERY = "select distinct room_name" + ROOM_NAME_COLUMN + " from rooms";
+    public static final String GET_ROOMS_QUERY = "select distinct " + ROOM_NAME_COLUMN + " from " + DIXIT_TABLE;
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN +
                             " FROM " + DIXIT_TABLE + " WHERE " +
                             ROOM_NAME_COLUMN + " like ?";
@@ -108,19 +108,24 @@ public class DixitConfigurationService {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
     @Path("join/")
-    public void joinRoom(BasicRequestDTO dto) {
+    public List<String> joinRoom(BasicRequestDTO dto) {
         try {
             PreparedStatement preparedStatement = getConnection().prepareStatement(AFTER_FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
             preparedStatement.setString(3, dto.roomName);
             preparedStatement.execute();
+            return getRandomCards(new CardRequestDTO(dto, 6));
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
             e.printStackTrace();
+        } catch (JSONException e) {
+            e.printStackTrace();
         }
+        return null;
     }
 
     @GET
@@ -209,8 +214,8 @@ public class DixitConfigurationService {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @Path("cards/")
-    public String getRandomCards(CardRequestDTO cardRequestDTO) throws SQLException, NamingException, JSONException {
-        JSONObject json = new JSONObject();
+    public List<String> getRandomCards(CardRequestDTO cardRequestDTO) throws SQLException, NamingException, JSONException {
+        List<String> cards = new ArrayList<String>();
 
         PreparedStatement preparedStatement = getConnection().prepareStatement(GET_CARD_FOR_PLAYER);
         preparedStatement.setString(1, cardRequestDTO.requestBasicDTO.roomName);
@@ -221,7 +226,7 @@ public class DixitConfigurationService {
             String[] split = string.split(",");
             for (String s : split) {
                 if (!s.trim().equals("")) {
-                    existingNumbers.add(Integer.valueOf(s));
+                    existingNumbers.add(Integer.valueOf(s.trim()));
                 }
             }
         }
@@ -235,16 +240,16 @@ public class DixitConfigurationService {
                     found = true;
                 }
                 newCards[i] = randomCard;
-                json.put("CARD" + i, randomCard);
+                cards.add(String.valueOf(randomCard));
             }
 
         }
 
         updateCardToDB(newCards,
                 cardRequestDTO.requestBasicDTO.roomName,
-                cardRequestDTO.requestBasicDTO.roomName);
+                cardRequestDTO.requestBasicDTO.nickName);
 
-        return json.toString();
+        return cards;
     }
 
     private void updateCardToDB(int[] newCards, String roomName, String userName) {

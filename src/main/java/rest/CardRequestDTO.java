@@ -8,6 +8,14 @@ import javax.xml.bind.annotation.XmlRootElement;
  */
 @XmlRootElement
 public class CardRequestDTO {
+    public CardRequestDTO() {
+    }
+
+    public CardRequestDTO(BasicRequestDTO requestBasicDTO, int cardNumberRequest) {
+        this.requestBasicDTO = requestBasicDTO;
+        this.cardNumberRequest = cardNumberRequest;
+    }
+
     @XmlElement
     BasicRequestDTO requestBasicDTO;
 
