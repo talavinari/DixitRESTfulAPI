@@ -4,17 +4,13 @@ import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
 
 /**
- * Created by tal on 3/23/2016.
+ * Created by tal on 3/25/2016.
  */
-
 @XmlRootElement
-public class AssociationNotifyDTO {
+public class VoteDTO {
     @XmlElement
     BasicRequestDTO basicInfo;
 
     @XmlElement
-    String winningCard;
-
-    @XmlElement
-    String association;
+    String card;
 }

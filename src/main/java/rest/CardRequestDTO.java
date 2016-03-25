@@ -12,12 +12,12 @@ public class CardRequestDTO {
     }
 
     public CardRequestDTO(BasicRequestDTO requestBasicDTO, int cardNumberRequest) {
-        this.requestBasicDTO = requestBasicDTO;
+        this.basicInfo = requestBasicDTO;
         this.cardNumberRequest = cardNumberRequest;
     }
 
     @XmlElement
-    BasicRequestDTO requestBasicDTO;
+    BasicRequestDTO basicInfo;
 
     @XmlElement
     int cardNumberRequest;
