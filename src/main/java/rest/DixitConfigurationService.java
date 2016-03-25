@@ -89,13 +89,17 @@ public class DixitConfigurationService {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @Path("addRoom/")
-    public List<String> addRoom(BasicRequestDTO dto) {
+    public String addRoom(BasicRequestDTO dto) {
         try {
             PreparedStatement preparedStatement = getConnection().prepareStatement(FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
             preparedStatement.execute();
-            return getRandomCards(new CardRequestDTO(dto, 6));
+            List<String> cards = getRandomCards(new CardRequestDTO(dto, 6));
+            String cardsString = StringUtils.join(cards, ",");
+            return Json.createObjectBuilder()
+                    .add("cards", cardsString).build().toString();
+
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
@@ -162,8 +166,18 @@ public class DixitConfigurationService {
     }
 
     private String createJoinRoomReturnMessage(BasicRequestDTO dto, List<String> cards) throws Exception{
-        List<Player> players = getPlayersInRoomWithIndex(dto.roomName);
+        JsonArray arrayOfPlayers = buildPlayersArray(dto);
+
         String cardsString = StringUtils.join(cards, ",");
+
+        JsonObject jsonMessage = Json.createObjectBuilder()
+                .add("players", arrayOfPlayers)
+                .add("cards", cardsString).build();
+        return jsonMessage.toString();
+    }
+
+    private JsonArray buildPlayersArray(BasicRequestDTO dto) {
+        List<Player> players = getPlayersInRoomWithIndex(dto.roomName);
 
         JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
         for (Player player : players){
@@ -174,11 +188,7 @@ public class DixitConfigurationService {
 
         JsonArray arrayOfPlayers = jsonArrayBuilder.build();
         Json.createObjectBuilder().add("players", arrayOfPlayers);
-
-        JsonObject jsonMessage = Json.createObjectBuilder()
-                .add("players", arrayOfPlayers)
-                .add("cards", cardsString).build();
-        return jsonMessage.toString();
+        return arrayOfPlayers;
     }
 
 
