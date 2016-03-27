@@ -35,15 +35,30 @@ public class PublishUtils {
         publishMessage(voteObject.basicInfo.roomName, data);
     }
 
-    public static  void publishAssociation(AssociationNotifyDTO associationNotifyDTO) throws JSONException {
+    public static void publishUserJoined(BasicRequestDTO dto, String index) throws JSONException {
         JsonObjectBuilder data =  Json.createObjectBuilder()
-                .add(MESSAGE_TYPE, MessageType.Association.getDescription())
-                .add(PLAYER_NAME, associationNotifyDTO.basicInfo.nickName)
-                .add(WINNING_CARD, associationNotifyDTO.winningCard)
-                .add(ASSOCIATION, associationNotifyDTO.association);
-        publishMessage(associationNotifyDTO.basicInfo.roomName, data);
+                .add(MESSAGE_TYPE, MessageType.JoinedToRoom.getDescription())
+                .add(PLAYER_NAME, dto.nickName)
+                .add(INDEX, index);
+        publishMessage(dto.roomName, data);
     }
 
+    public static void publishPickedCard(AssociationNotifyDTO dto) throws JSONException {
+        handleGenericAssociationNotification(dto, MessageType.PickedCard);
+    }
+
+    public static  void publishAssociation(AssociationNotifyDTO dto) throws JSONException {
+        handleGenericAssociationNotification(dto, MessageType.Association);
+    }
+
+    private static void handleGenericAssociationNotification(AssociationNotifyDTO dto, MessageType messageType) throws JSONException {
+        JsonObjectBuilder data =  Json.createObjectBuilder()
+                .add(MESSAGE_TYPE, messageType.getDescription())
+                .add(PLAYER_NAME, dto.basicInfo.nickName)
+                .add(WINNING_CARD, dto.winningCard)
+                .add(ASSOCIATION, dto.association);
+        publishMessage(dto.basicInfo.roomName, data);
+    }
 
     private static void publishMessage(String topicName, JsonObjectBuilder jsonObjectBuilder) throws JSONException {
         HttpClient httpClient = HttpClientBuilder.create().build();
@@ -65,14 +80,4 @@ public class PublishUtils {
             httpClient.getConnectionManager().shutdown(); //Deprecated
         }
     }
-
-    public static void publishUserJoined(BasicRequestDTO dto, String index) throws Exception {
-        JsonObjectBuilder data =  Json.createObjectBuilder()
-                .add(MESSAGE_TYPE, MessageType.JoinedToRoom.getDescription())
-                .add(PLAYER_NAME, dto.nickName)
-                .add(INDEX, index);
-        publishMessage(dto.roomName, data);
-    }
-
-
 }

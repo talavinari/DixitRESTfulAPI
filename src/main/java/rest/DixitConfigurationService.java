@@ -26,10 +26,9 @@ public class DixitConfigurationService {
     public static final String PLAYER_NAME_COLUMN = "player_name";
     public static final String PLAYER_INDEX_COLUMN = "player_index";
 
-    public static final int TOTAL_CARDS_NUM = 256;
+    public static final int TOTAL_CARDS_NUM = 80;
+    public static final int SAVE_CARD_HISTORY_THRESHOLD = 10;
     public static final String DIXIT_TABLE = " DXT_MAIN ";
-
-    //public static final String APIKey= "AIzaSyBqGEWSkT0G9cvzDunEQv8UU13ylkZj0so";
 
     public static final String GET_ROOMS_QUERY = "select distinct " + ROOM_NAME_COLUMN + " from " + DIXIT_TABLE;
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN  + ", "
@@ -37,11 +36,22 @@ public class DixitConfigurationService {
                             " FROM " + DIXIT_TABLE + " WHERE " +
                             ROOM_NAME_COLUMN + " like ?";
 
-    public static final String GET_CARD_FOR_PLAYER = "SELECT " + CARD_COLUMN +
+    public static final String GET_ALL_CARDS_IN_ROOM = "SELECT " + CARD_COLUMN +
             " FROM " + DIXIT_TABLE + " WHERE " +
             ROOM_NAME_COLUMN + " like  ?";
-    public static final String UPDATE_CARDS = "update " + DIXIT_TABLE + " set " + CARD_COLUMN + " = ?" +
+
+    public static final String GET_CARDS_FOR_PLAYER = "SELECT " + CARD_COLUMN +
+            " FROM " + DIXIT_TABLE + " WHERE " +
+            PLAYER_NAME_COLUMN + " like  ?";
+
+    public static final String UPDATE_CARDS_CONCAT = "update " + DIXIT_TABLE + " set " + CARD_COLUMN +
+            " = concat(" + CARD_COLUMN + ", ?)" +
             " where " + ROOM_NAME_COLUMN + " like ? and " + PLAYER_NAME_COLUMN + " like ?";
+
+    public static final String UPDATE_CARDS = "update " + DIXIT_TABLE + " set " + CARD_COLUMN + " =  ?" +
+            " where " + ROOM_NAME_COLUMN + " like ? and " + PLAYER_NAME_COLUMN + " like ?";
+
+
     public static final String AFTER_FIRST_JOIN_ROOM_QUERY = "insert into " + DIXIT_TABLE + " (select ?, ?,  " +
             "max(player_index) + 1, ''  from " + DIXIT_TABLE + " where " + ROOM_NAME_COLUMN + " like ?)";
 
@@ -51,6 +61,7 @@ public class DixitConfigurationService {
     public static final String REMOVE_PLAYER_FROM_ROOM = "delete from " + DIXIT_TABLE + " " +
             "where " + PLAYER_NAME_COLUMN + " like ?" +
             " and  " + ROOM_NAME_COLUMN + " like ?";
+    private static final int DIXIT_NUMBER_OF_CARDS_IN_HAND = 6;
 
     public static Random rnd = new Random();
 
@@ -60,10 +71,13 @@ public class DixitConfigurationService {
     @Path("sendAssociation/")
     public String sendAssociation(AssociationNotifyDTO associationNotifyDTO) {
         try {
+            sortCardsInDB(associationNotifyDTO.winningCard, associationNotifyDTO.basicInfo);
             PublishUtils.publishAssociation(associationNotifyDTO);
             List<String> randomCards = getRandomCards
-                    (new CardRequestDTO(associationNotifyDTO.basicInfo, 1));
-            return randomCards.get(0);
+                    (new CardPickedNotifyDTO(associationNotifyDTO.basicInfo, 1));
+            JsonObject jsonMessage = Json.createObjectBuilder()
+                    .add("newCard", randomCards.get(0)).build();
+            return jsonMessage.toString();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -72,13 +86,27 @@ public class DixitConfigurationService {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Path("sendPickedCard/")
+    public void sendPickedCard(AssociationNotifyDTO dto) {
+        try {
+            sortCardsInDB(dto.winningCard, dto.basicInfo);
+            PublishUtils.publishPickedCard(dto);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @Path("vote/")
-    public String vote(VoteDTO associationNotifyDTO) {
+    public String vote(VoteDTO vote ) {
         try {
-            PublishUtils.publishVote(associationNotifyDTO);
-            List<String> randomCards = getRandomCards(new CardRequestDTO(associationNotifyDTO.basicInfo, 1));
-            return randomCards.get(0);
+            PublishUtils.publishVote(vote);
+            List<String> randomCards = getRandomCards(new CardPickedNotifyDTO(vote.basicInfo, 1));
+            JsonObject jsonMessage = Json.createObjectBuilder()
+                    .add("newCard", randomCards.get(0)).build();
+            return jsonMessage.toString();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -95,7 +123,7 @@ public class DixitConfigurationService {
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
             preparedStatement.execute();
-            List<String> cards = getRandomCards(new CardRequestDTO(dto, 6));
+            List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             String cardsString = StringUtils.join(cards, ",");
             return Json.createObjectBuilder()
                     .add("cards", cardsString).build().toString();
@@ -141,7 +169,7 @@ public class DixitConfigurationService {
             preparedStatement.setString(3, dto.roomName);
             preparedStatement.execute();
             PublishUtils.publishUserJoined(dto, getPlayerIndex(dto));
-            List<String> cards = getRandomCards(new CardRequestDTO(dto, 6));
+            List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             return createJoinRoomReturnMessage(dto, cards);
         } catch (SQLException e) {
             e.printStackTrace();
@@ -153,43 +181,6 @@ public class DixitConfigurationService {
         return null;
     }
 
-    private String getPlayerIndex(BasicRequestDTO dto) {
-        List<Player> players = getPlayersInRoomWithIndex(dto.roomName);
-
-        for (Player player : players){
-            if (player.name.equals(dto.nickName)){
-                return player.index;
-            }
-        }
-
-        return null;
-    }
-
-    private String createJoinRoomReturnMessage(BasicRequestDTO dto, List<String> cards) throws Exception{
-        JsonArray arrayOfPlayers = buildPlayersArray(dto);
-
-        String cardsString = StringUtils.join(cards, ",");
-
-        JsonObject jsonMessage = Json.createObjectBuilder()
-                .add("players", arrayOfPlayers)
-                .add("cards", cardsString).build();
-        return jsonMessage.toString();
-    }
-
-    private JsonArray buildPlayersArray(BasicRequestDTO dto) {
-        List<Player> players = getPlayersInRoomWithIndex(dto.roomName);
-
-        JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
-        for (Player player : players){
-            jsonArrayBuilder.add(Json.createObjectBuilder()
-                                .add("name", player.name)
-                                .add("index", player.index));
-        }
-
-        JsonArray arrayOfPlayers = jsonArrayBuilder.build();
-        Json.createObjectBuilder().add("players", arrayOfPlayers);
-        return arrayOfPlayers;
-    }
 
 
     @GET
@@ -204,28 +195,6 @@ public class DixitConfigurationService {
         }
 
         return names;
-    }
-
-    private List<Player> getPlayersInRoomWithIndex(@PathParam("roomName") String roomName) {
-        roomName = parseUrl(roomName);
-        List<Player> players = new ArrayList<Player>();
-        try {
-            Connection con = getConnection();
-            PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
-            preparedStatement.setString(1, roomName);
-            ResultSet rs = preparedStatement.executeQuery();
-            while (rs.next()) {
-                players.add(new Player(rs.getString(PLAYER_NAME_COLUMN),
-                                      rs.getString(PLAYER_INDEX_COLUMN)));
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
-        }
-
-        return players;
     }
 
     @GET
@@ -262,14 +231,14 @@ public class DixitConfigurationService {
         return url.replace('+', ' ');
     }
 
-    private List<String> getRandomCards(CardRequestDTO cardRequestDTO) throws Exception {
+    private List<String> getRandomCards(CardPickedNotifyDTO cardRequestDTO) throws Exception {
         List<String> cards = getRandomCardsList(cardRequestDTO);
-        updateCardToDB(cards,cardRequestDTO.basicInfo);
+        updateCardsToDB(cards,cardRequestDTO.basicInfo);
         return cards;
     }
 
-    private List<String> getRandomCardsList(CardRequestDTO cardRequestDTO) throws SQLException, NamingException {
-        PreparedStatement preparedStatement = getConnection().prepareStatement(GET_CARD_FOR_PLAYER);
+    private List<String> getRandomCardsList(CardPickedNotifyDTO cardRequestDTO) throws SQLException, NamingException {
+        PreparedStatement preparedStatement = getConnection().prepareStatement(GET_ALL_CARDS_IN_ROOM);
         preparedStatement.setString(1, cardRequestDTO.basicInfo.roomName);
         ResultSet rs = preparedStatement.executeQuery();
         Set<Integer> existingNumbers = new HashSet<Integer>();
@@ -291,26 +260,125 @@ public class DixitConfigurationService {
                 int randomCard = rnd.nextInt(TOTAL_CARDS_NUM);
                 if (!existingNumbers.contains(randomCard)) {
                     found = true;
+                    newCards.add(String.valueOf(randomCard));
                 }
-                newCards.add(String.valueOf(randomCard));
             }
         }
         return newCards;
     }
 
-    private void updateCardToDB(List<String> newCards, BasicRequestDTO basicRequestDTO) {
+    private void updateCardsToDB(List<String> newCards, BasicRequestDTO basicRequestDTO) {
         String cardsInDB = StringUtils.join(newCards, ',');
-
+        String sql;
+        if (newCards.size() == 1){
+            sql = UPDATE_CARDS_CONCAT;
+            cardsInDB =  ", " + cardsInDB;
+        }
+        else{
+            sql = UPDATE_CARDS;
+        }
         try {
-            PreparedStatement preparedStatement = getConnection().prepareStatement(UPDATE_CARDS);
-            preparedStatement.setString(1, cardsInDB);
-            preparedStatement.setString(2, basicRequestDTO.roomName);
-            preparedStatement.setString(3, basicRequestDTO.nickName);
-            preparedStatement.executeUpdate();
+            handleDB(basicRequestDTO, cardsInDB, sql);
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
             e.printStackTrace();
         }
     }
+
+    private void handleDB(BasicRequestDTO basicRequestDTO, String cardsInDB, String sql) throws SQLException, NamingException {
+        PreparedStatement preparedStatement = getConnection().prepareStatement(sql);
+        preparedStatement.setString(1, cardsInDB);
+        preparedStatement.setString(2, basicRequestDTO.roomName);
+        preparedStatement.setString(3, basicRequestDTO.nickName);
+        preparedStatement.executeUpdate();
+    }
+
+
+    private void sortCardsInDB(String winningCard, BasicRequestDTO dto) throws Exception {
+        PreparedStatement preparedStatement = getConnection().prepareStatement(GET_CARDS_FOR_PLAYER);
+        preparedStatement.setString(1, dto.nickName);
+        ResultSet rs = preparedStatement.executeQuery();
+        List<String> cards = new ArrayList<String>();
+        cards.add("dummy");
+        while (rs.next()) {
+            String string = rs.getString(CARD_COLUMN);
+            String[] split = string.split(",");
+            for (String s : split) {
+                if (!s.trim().equals("")) {
+                    cards.add(s.trim());
+                }
+            }
+        }
+
+        if (cards.size() > SAVE_CARD_HISTORY_THRESHOLD){
+            cards.remove(cards.size() - (1 + DIXIT_NUMBER_OF_CARDS_IN_HAND));
+        }
+
+        Collections.swap(cards, cards.indexOf(winningCard) , 0);
+        cards.remove("dummy");
+        updateCardsToDB(cards, dto);
+    }
+
+    private String getPlayerIndex(BasicRequestDTO dto) {
+        List<Player> players = getPlayersInRoomWithIndex(dto.roomName);
+
+        for (Player player : players){
+            if (player.name.equals(dto.nickName)){
+                return player.index;
+            }
+        }
+
+        return null;
+    }
+
+    private JsonArray buildPlayersArray(BasicRequestDTO dto) {
+        List<Player> players = getPlayersInRoomWithIndex(dto.roomName);
+
+        JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
+        for (Player player : players){
+            jsonArrayBuilder.add(Json.createObjectBuilder()
+                    .add("name", player.name)
+                    .add("index", player.index));
+        }
+
+        JsonArray arrayOfPlayers = jsonArrayBuilder.build();
+        Json.createObjectBuilder().add("players", arrayOfPlayers);
+        return arrayOfPlayers;
+    }
+
+    private String createJoinRoomReturnMessage(BasicRequestDTO dto, List<String> cards) throws Exception{
+        JsonArray arrayOfPlayers = buildPlayersArray(dto);
+
+        String cardsString = StringUtils.join(cards, ",");
+
+        JsonObject jsonMessage = Json.createObjectBuilder()
+                .add("players", arrayOfPlayers)
+                .add("cards", cardsString).build();
+        return jsonMessage.toString();
+    }
+
+
+    private List<Player> getPlayersInRoomWithIndex(String roomName) {
+        roomName = parseUrl(roomName);
+        List<Player> players = new ArrayList<Player>();
+        try {
+            Connection con = getConnection();
+            PreparedStatement preparedStatement = con.prepareStatement(GET_PLAYERS_IN_ROOM_QUERY);
+            preparedStatement.setString(1, roomName);
+            ResultSet rs = preparedStatement.executeQuery();
+            while (rs.next()) {
+                players.add(new Player(rs.getString(PLAYER_NAME_COLUMN),
+                        rs.getString(PLAYER_INDEX_COLUMN)));
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+
+        return players;
+    }
+
 }
