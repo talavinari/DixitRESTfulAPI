@@ -1,7 +1,6 @@
 package rest;
 
 import org.apache.commons.lang3.StringUtils;
-import org.codehaus.jettison.json.JSONException;
 
 import javax.json.Json;
 import javax.json.JsonArray;
@@ -18,6 +17,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.locks.Lock;
 
 @Path("/service")
 public class DixitConfigurationService {
@@ -61,9 +61,23 @@ public class DixitConfigurationService {
     public static final String REMOVE_PLAYER_FROM_ROOM = "delete from " + DIXIT_TABLE + " " +
             "where " + PLAYER_NAME_COLUMN + " like ?" +
             " and  " + ROOM_NAME_COLUMN + " like ?";
+
+    public static final String FIND_DUPLICATE_ROOM_QUERY = "select count(*) from " + DIXIT_TABLE +
+            " where " + ROOM_NAME_COLUMN + " like ?";
+
+    public static final String FIND_DUPLICATE_PLAYER_IN_ROOM_QUERY = "select count(*) " +
+            " from " + DIXIT_TABLE +
+            " where " + ROOM_NAME_COLUMN + " like ? " +
+            " and " + PLAYER_NAME_COLUMN + " like ?";
+
+    public static final String DUPLICATE_ROOM_NAME = "Duplicate room name";
+    public static final String DUPLICATE_PLAYER_NAME = "Duplicate player name";
+
     private static final int DIXIT_NUMBER_OF_CARDS_IN_HAND = 6;
 
     public static Random rnd = new Random();
+
+    Map<String, Lock> mutexForRooms = Collections.synchronizedMap(new HashMap<String, Lock>());
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -79,20 +93,20 @@ public class DixitConfigurationService {
                     .add("newCard", randomCards.get(0)).build();
             return jsonMessage.toString();
         } catch (Exception e) {
-            e.printStackTrace();
+            return createJSONErrorMessage(e.getMessage());
         }
-        return null;
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("sendPickedCard/")
-    public void sendPickedCard(AssociationNotifyDTO dto) {
+    public String sendPickedCard(AssociationNotifyDTO dto) {
         try {
             sortCardsInDB(dto.winningCard, dto.basicInfo);
             PublishUtils.publishPickedCard(dto);
+            return "";
         } catch (Exception e) {
-            e.printStackTrace();
+            return createJSONErrorMessage(e.getMessage());
         }
     }
 
@@ -108,9 +122,8 @@ public class DixitConfigurationService {
                     .add("newCard", randomCards.get(0)).build();
             return jsonMessage.toString();
         } catch (Exception e) {
-            e.printStackTrace();
+            return createJSONErrorMessage(e.getMessage());
         }
-        return null;
     }
 
     @POST
@@ -119,6 +132,8 @@ public class DixitConfigurationService {
     @Path("addRoom/")
     public String addRoom(BasicRequestDTO dto) {
         try {
+
+            checkIfRoomNameExists(dto.roomName);
             PreparedStatement preparedStatement = getConnection().prepareStatement(FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
@@ -128,17 +143,9 @@ public class DixitConfigurationService {
             return Json.createObjectBuilder()
                     .add("cards", cardsString).build().toString();
 
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
-        } catch (JSONException e) {
-            e.printStackTrace();
         } catch (Exception e) {
-            e.printStackTrace();
+            return createJSONErrorMessage(e.getMessage());
         }
-
-        return null;
     }
 
     @POST
@@ -150,10 +157,8 @@ public class DixitConfigurationService {
             preparedStatement.setString(1, requestDTO.nickName);
             preparedStatement.setString(2, requestDTO.roomName);
             preparedStatement.execute();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
+        } catch (Exception ignored) {
+
         }
     }
 
@@ -163,6 +168,7 @@ public class DixitConfigurationService {
     @Path("join/")
     public String joinRoom(BasicRequestDTO dto) {
         try {
+            checkIfPlayerNameExistsInRoom(dto);
             PreparedStatement preparedStatement = getConnection().prepareStatement(AFTER_FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
@@ -171,17 +177,10 @@ public class DixitConfigurationService {
             PublishUtils.publishUserJoined(dto, getPlayerIndex(dto));
             List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             return createJoinRoomReturnMessage(dto, cards);
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } catch (NamingException e) {
-            e.printStackTrace();
         } catch (Exception e) {
-            e.printStackTrace();
+            return createJSONErrorMessage(e.getMessage());
         }
-        return null;
     }
-
-
 
     @GET
     @Path("players/{roomName}")
@@ -201,7 +200,6 @@ public class DixitConfigurationService {
     @Path("/rooms")
     @Produces({MediaType.APPLICATION_JSON})
     public List<String> getRooms() {
-
         List<String> allRooms = new ArrayList<String>();
         try {
             Connection con = getConnection();
@@ -210,6 +208,7 @@ public class DixitConfigurationService {
                 allRooms.add(rs.getString(ROOM_NAME_COLUMN));
             }
 
+            // TODO change produce to json and handle it in android
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
@@ -380,5 +379,42 @@ public class DixitConfigurationService {
 
         return players;
     }
+
+
+    private String createJSONErrorMessage(String error) {
+        return Json.createObjectBuilder().
+                add("error",  error).build().toString(
+        );
+    }
+
+    private void checkIfRoomNameExists(String roomName) throws SQLException, NamingException, DuplicateNameException {
+        PreparedStatement preparedStatement = getConnection().prepareStatement(FIND_DUPLICATE_ROOM_QUERY);
+        preparedStatement.setString(1, roomName);
+        ResultSet rs = preparedStatement.executeQuery();
+        int count = 0;
+        while (rs.next()) {
+            count = rs.getInt(1);
+        }
+        if (count >= 1){
+            throw new DuplicateNameException(DUPLICATE_ROOM_NAME);
+        }
+    }
+
+    private void checkIfPlayerNameExistsInRoom(BasicRequestDTO dto) throws SQLException, NamingException, DuplicateNameException {
+        PreparedStatement preparedStatement = getConnection().
+                prepareStatement(FIND_DUPLICATE_PLAYER_IN_ROOM_QUERY);
+        preparedStatement.setString(1, dto.roomName);
+        preparedStatement.setString(2, dto.nickName);
+
+        ResultSet rs = preparedStatement.executeQuery();
+        int count = 0;
+        while (rs.next()) {
+            count = rs.getInt(1);
+        }
+        if (count == 1){
+            throw new DuplicateNameException(DUPLICATE_PLAYER_NAME);
+        }
+    }
+
 
 }
