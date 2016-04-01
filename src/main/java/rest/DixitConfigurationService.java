@@ -17,7 +17,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
-import java.util.concurrent.locks.Lock;
 
 @Path("/service")
 public class DixitConfigurationService {
@@ -74,10 +73,8 @@ public class DixitConfigurationService {
     public static final String DUPLICATE_PLAYER_NAME = "Duplicate player name";
 
     private static final int DIXIT_NUMBER_OF_CARDS_IN_HAND = 6;
-
+    private Connection connection;
     public static Random rnd = new Random();
-
-    Map<String, Lock> mutexForRooms = Collections.synchronizedMap(new HashMap<String, Lock>());
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -138,6 +135,7 @@ public class DixitConfigurationService {
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
             preparedStatement.execute();
+            preparedStatement.close();
             List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             String cardsString = StringUtils.join(cards, ",");
             return Json.createObjectBuilder()
@@ -157,6 +155,7 @@ public class DixitConfigurationService {
             preparedStatement.setString(1, requestDTO.nickName);
             preparedStatement.setString(2, requestDTO.roomName);
             preparedStatement.execute();
+            preparedStatement.close();
         } catch (Exception ignored) {
 
         }
@@ -174,6 +173,7 @@ public class DixitConfigurationService {
             preparedStatement.setString(2, dto.nickName);
             preparedStatement.setString(3, dto.roomName);
             preparedStatement.execute();
+            preparedStatement.close();
             PublishUtils.publishUserJoined(dto, getPlayerIndex(dto));
             List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             return createJoinRoomReturnMessage(dto, cards);
@@ -207,6 +207,7 @@ public class DixitConfigurationService {
             while (rs.next()) {
                 allRooms.add(rs.getString(ROOM_NAME_COLUMN));
             }
+            rs.close();
 
             // TODO change produce to json and handle it in android
         } catch (SQLException e) {
@@ -219,10 +220,14 @@ public class DixitConfigurationService {
     }
 
     private Connection getConnection() throws NamingException, SQLException {
-        Context initCtx = new InitialContext();
-        Context envCtx = (Context) initCtx.lookup("java:comp/env");
-        DataSource ds = (DataSource) envCtx.lookup("jdbc/test");
-        return ds.getConnection();
+        if (connection == null) {
+            Context initCtx = new InitialContext();
+            Context envCtx = (Context) initCtx.lookup("java:comp/env");
+            DataSource ds = (DataSource) envCtx.lookup("jdbc/test");
+            connection = ds.getConnection();
+        }
+
+        return connection;
     }
 
 
@@ -250,6 +255,7 @@ public class DixitConfigurationService {
                 }
             }
         }
+        preparedStatement.close();
 
         List<String> newCards = new ArrayList<String>();
 
@@ -260,6 +266,7 @@ public class DixitConfigurationService {
                 if (!existingNumbers.contains(randomCard)) {
                     found = true;
                     newCards.add(String.valueOf(randomCard));
+                    existingNumbers.add(randomCard);
                 }
             }
         }
@@ -291,6 +298,7 @@ public class DixitConfigurationService {
         preparedStatement.setString(2, basicRequestDTO.roomName);
         preparedStatement.setString(3, basicRequestDTO.nickName);
         preparedStatement.executeUpdate();
+        preparedStatement.close();
     }
 
 
@@ -309,6 +317,8 @@ public class DixitConfigurationService {
                 }
             }
         }
+
+        preparedStatement.close();
 
         if (cards.size() > SAVE_CARD_HISTORY_THRESHOLD){
             cards.remove(cards.size() - (1 + DIXIT_NUMBER_OF_CARDS_IN_HAND));
@@ -371,6 +381,8 @@ public class DixitConfigurationService {
                         rs.getString(PLAYER_INDEX_COLUMN)));
             }
 
+            preparedStatement.close();
+
         } catch (SQLException e) {
             e.printStackTrace();
         } catch (NamingException e) {
@@ -395,6 +407,9 @@ public class DixitConfigurationService {
         while (rs.next()) {
             count = rs.getInt(1);
         }
+
+        preparedStatement.close();
+
         if (count >= 1){
             throw new DuplicateNameException(DUPLICATE_ROOM_NAME);
         }
@@ -411,6 +426,8 @@ public class DixitConfigurationService {
         while (rs.next()) {
             count = rs.getInt(1);
         }
+
+        preparedStatement.close();
         if (count == 1){
             throw new DuplicateNameException(DUPLICATE_PLAYER_NAME);
         }
