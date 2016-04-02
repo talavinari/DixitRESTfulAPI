@@ -25,7 +25,7 @@ public class DixitConfigurationService {
     public static final String PLAYER_NAME_COLUMN = "player_name";
     public static final String PLAYER_INDEX_COLUMN = "player_index";
 
-    public static final int TOTAL_CARDS_NUM = 80;
+    public static final int TOTAL_CARDS_NUM = 84;
     public static final int SAVE_CARD_HISTORY_THRESHOLD = 10;
     public static final String DIXIT_TABLE = " DXT_MAIN ";
 

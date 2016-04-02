@@ -10,6 +10,8 @@ import javax.json.Json;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
 import javax.ws.rs.core.MediaType;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 
 /**
  * Created by tal on 3/25/2016.
@@ -43,20 +45,20 @@ public class PublishUtils {
         publishMessage(dto.roomName, data);
     }
 
-    public static void publishPickedCard(AssociationNotifyDTO dto) throws JSONException {
+    public static void publishPickedCard(AssociationNotifyDTO dto) throws JSONException, UnsupportedEncodingException {
         handleGenericAssociationNotification(dto, MessageType.PickedCard);
     }
 
-    public static  void publishAssociation(AssociationNotifyDTO dto) throws JSONException {
+    public static  void publishAssociation(AssociationNotifyDTO dto) throws JSONException, UnsupportedEncodingException {
         handleGenericAssociationNotification(dto, MessageType.Association);
     }
 
-    private static void handleGenericAssociationNotification(AssociationNotifyDTO dto, MessageType messageType) throws JSONException {
+    private static void handleGenericAssociationNotification(AssociationNotifyDTO dto, MessageType messageType) throws JSONException, UnsupportedEncodingException {
         JsonObjectBuilder data =  Json.createObjectBuilder()
                 .add(MESSAGE_TYPE, messageType.getDescription())
                 .add(PLAYER_NAME, dto.basicInfo.nickName)
                 .add(WINNING_CARD, dto.winningCard)
-                .add(ASSOCIATION, dto.association);
+                .add(ASSOCIATION, URLEncoder.encode(dto.association,"UTF8"));
         publishMessage(dto.basicInfo.roomName, data);
     }
 
