@@ -20,6 +20,8 @@ import java.util.*;
 
 @Path("/service")
 public class DixitConfigurationService {
+    private static final int DIXIT_NUMBER_OF_CARDS_IN_HAND = 6;
+    private static final int DIXIT_NUMBER_OF_PLAYERS_IN_ROOM = 4;
     public static final String ROOM_NAME_COLUMN = "room_name";
     public static final String CARD_COLUMN = "cards";
     public static final String PLAYER_NAME_COLUMN = "player_name";
@@ -29,7 +31,8 @@ public class DixitConfigurationService {
     public static final int SAVE_CARD_HISTORY_THRESHOLD = 10;
     public static final String DIXIT_TABLE = " DXT_MAIN ";
 
-    public static final String GET_ROOMS_QUERY = "select distinct " + ROOM_NAME_COLUMN + " from " + DIXIT_TABLE;
+    public static final String GET_ROOMS_QUERY = "select distinct " + ROOM_NAME_COLUMN + " from " + DIXIT_TABLE +
+                                                 " group by " + ROOM_NAME_COLUMN  + " having count(*) < " + DIXIT_NUMBER_OF_PLAYERS_IN_ROOM;
     public static final String GET_PLAYERS_IN_ROOM_QUERY = "SELECT " + PLAYER_NAME_COLUMN  + ", "
                             + PLAYER_INDEX_COLUMN +
                             " FROM " + DIXIT_TABLE + " WHERE " +
@@ -72,7 +75,6 @@ public class DixitConfigurationService {
     public static final String DUPLICATE_ROOM_NAME = "Duplicate room name";
     public static final String DUPLICATE_PLAYER_NAME = "Duplicate player name";
 
-    private static final int DIXIT_NUMBER_OF_CARDS_IN_HAND = 6;
     private Connection connection;
     public static Random rnd = new Random();
 
@@ -90,7 +92,7 @@ public class DixitConfigurationService {
                     .add("newCard", randomCards.get(0)).build();
             return jsonMessage.toString();
         } catch (Exception e) {
-            return createJSONErrorMessage(e.getMessage());
+            return createJSONErrorMessage(e.getMessage(), -1);
         }
     }
 
@@ -101,9 +103,13 @@ public class DixitConfigurationService {
         try {
             sortCardsInDB(dto.winningCard, dto.basicInfo);
             PublishUtils.publishPickedCard(dto);
-            return "";
+            List<String> randomCards = getRandomCards(new CardPickedNotifyDTO(dto.basicInfo, 1));
+            JsonObject jsonMessage = Json.createObjectBuilder()
+                    .add("newCard", randomCards.get(0)).build();
+            return jsonMessage.toString();
+
         } catch (Exception e) {
-            return createJSONErrorMessage(e.getMessage());
+            return createJSONErrorMessage(e.getMessage(), -1);
         }
     }
 
@@ -114,12 +120,9 @@ public class DixitConfigurationService {
     public String vote(VoteDTO vote ) {
         try {
             PublishUtils.publishVote(vote);
-            List<String> randomCards = getRandomCards(new CardPickedNotifyDTO(vote.basicInfo, 1));
-            JsonObject jsonMessage = Json.createObjectBuilder()
-                    .add("newCard", randomCards.get(0)).build();
-            return jsonMessage.toString();
+            return "";
         } catch (Exception e) {
-            return createJSONErrorMessage(e.getMessage());
+            return createJSONErrorMessage(e.getMessage(), -1);
         }
     }
 
@@ -142,7 +145,7 @@ public class DixitConfigurationService {
                     .add("cards", cardsString).build().toString();
 
         } catch (Exception e) {
-            return createJSONErrorMessage(e.getMessage());
+            return createJSONErrorMessage(e.getMessage(), -1);
         }
     }
 
@@ -178,7 +181,7 @@ public class DixitConfigurationService {
             List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             return createJoinRoomReturnMessage(dto, cards);
         } catch (Exception e) {
-            return createJSONErrorMessage(e.getMessage());
+            return createJSONErrorMessage(e.getMessage(), -1);
         }
     }
 
@@ -393,9 +396,10 @@ public class DixitConfigurationService {
     }
 
 
-    private String createJSONErrorMessage(String error) {
+    private String createJSONErrorMessage(String error, int errorCode) {
         return Json.createObjectBuilder().
-                add("error",  error).build().toString(
+                add("error",  error)
+                .add("errorCode", errorCode).build().toString(
         );
     }
 
