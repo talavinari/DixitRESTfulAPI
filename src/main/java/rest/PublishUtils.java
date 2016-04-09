@@ -13,9 +13,6 @@ import javax.ws.rs.core.MediaType;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 
-/**
- * Created by tal on 3/25/2016.
- */
 public class PublishUtils {
     public static final String GOOGLE_API_NOTIFICATION_URL = "https://gcm-http.googleapis.com/gcm/send";
     public static final String APIKey = "AIzaSyDnv6KNfOy08cZiBKVOn6yYPBo5qWaYTJY";
@@ -37,6 +34,12 @@ public class PublishUtils {
         publishMessage(voteObject.basicInfo.roomName, data);
     }
 
+    public static void publishRoomDestroy(BasicRequestDTO dto) throws JSONException{
+        JsonObjectBuilder data =  Json.createObjectBuilder()
+                .add(MESSAGE_TYPE, MessageType.DestroyRoom.getDescription())
+                .add(PLAYER_NAME, dto.nickName);
+        publishMessage(dto.roomName, data);
+    }
     public static void publishUserJoined(BasicRequestDTO dto, String index) throws JSONException {
         JsonObjectBuilder data =  Json.createObjectBuilder()
                 .add(MESSAGE_TYPE, MessageType.JoinedToRoom.getDescription())

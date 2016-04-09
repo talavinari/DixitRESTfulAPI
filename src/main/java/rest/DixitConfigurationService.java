@@ -1,6 +1,7 @@
 package rest;
 
 import org.apache.commons.lang3.StringUtils;
+import sun.awt.Mutex;
 
 import javax.json.Json;
 import javax.json.JsonArray;
@@ -64,6 +65,9 @@ public class DixitConfigurationService {
             "where " + PLAYER_NAME_COLUMN + " like ?" +
             " and  " + ROOM_NAME_COLUMN + " like ?";
 
+    public static final String REMOVE_ROOM = "delete from " + DIXIT_TABLE + " " +
+            "where " +  ROOM_NAME_COLUMN + " like ?";
+
     public static final String FIND_DUPLICATE_ROOM_QUERY = "select count(*) from " + DIXIT_TABLE +
             " where " + ROOM_NAME_COLUMN + " like ?";
 
@@ -72,11 +76,17 @@ public class DixitConfigurationService {
             " where " + ROOM_NAME_COLUMN + " like ? " +
             " and " + PLAYER_NAME_COLUMN + " like ?";
 
+    public static final String CHECK_IF_ROOM_IS_FULL = "select count(*) " +
+            " from " + DIXIT_TABLE +
+            " where " + ROOM_NAME_COLUMN + " like ? ";
+
     public static final String DUPLICATE_ROOM_NAME = "Duplicate room name";
     public static final String DUPLICATE_PLAYER_NAME = "Duplicate player name";
 
     private Connection connection;
     public static Random rnd = new Random();
+    private static Mutex createRoomMutex = new Mutex();
+    private static Map<String, Mutex> mutexPerRoom = new HashMap<String, Mutex>();
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -132,7 +142,7 @@ public class DixitConfigurationService {
     @Path("addRoom/")
     public String addRoom(BasicRequestDTO dto) {
         try {
-
+            createRoomMutex.lock();
             checkIfRoomNameExists(dto.roomName);
             PreparedStatement preparedStatement = getConnection().prepareStatement(FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
@@ -141,11 +151,17 @@ public class DixitConfigurationService {
             preparedStatement.close();
             List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             String cardsString = StringUtils.join(cards, ",");
+            mutexPerRoom.put(dto.roomName, new Mutex());
             return Json.createObjectBuilder()
                     .add("cards", cardsString).build().toString();
 
+        } catch (DixitException e) {
+            return createJSONErrorMessage(e.getMessage(), e.errorCode);
         } catch (Exception e) {
             return createJSONErrorMessage(e.getMessage(), -1);
+        }
+        finally {
+            createRoomMutex.unlock();
         }
     }
 
@@ -166,11 +182,33 @@ public class DixitConfigurationService {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Path("destroyRoom/")
+    public void destroyRoom(BasicRequestDTO dto) {
+        try {
+            PreparedStatement preparedStatement = getConnection().prepareStatement(REMOVE_ROOM);
+            preparedStatement.setString(1, dto.roomName);
+            preparedStatement.execute();
+            preparedStatement.close();
+            mutexPerRoom.remove(REMOVE_ROOM);
+            PublishUtils.publishRoomDestroy(dto);
+        } catch (Exception ignored) {
+
+        }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @Path("join/")
     public String joinRoom(BasicRequestDTO dto) {
         try {
+            Mutex mutex = mutexPerRoom.get(dto.roomName);
+            if (mutex == null){
+                throw new NonExistsObjectException();
+            }
+            mutex.lock();
             checkIfPlayerNameExistsInRoom(dto);
+            checkIfRoomIsFull(dto.roomName);
             PreparedStatement preparedStatement = getConnection().prepareStatement(AFTER_FIRST_JOIN_ROOM_QUERY);
             preparedStatement.setString(1, dto.roomName);
             preparedStatement.setString(2, dto.nickName);
@@ -180,10 +218,21 @@ public class DixitConfigurationService {
             PublishUtils.publishUserJoined(dto, getPlayerIndex(dto));
             List<String> cards = getRandomCards(new CardPickedNotifyDTO(dto, 6));
             return createJoinRoomReturnMessage(dto, cards);
-        } catch (Exception e) {
+        } catch (DixitException e) {
+            return createJSONErrorMessage(e.getMessage(), e.errorCode);
+        }
+        catch (Exception e) {
             return createJSONErrorMessage(e.getMessage(), -1);
         }
+        finally {
+            Mutex mutex = mutexPerRoom.get(dto.roomName);
+            if (mutex != null) {
+                mutex.unlock();
+            }
+        }
     }
+
+
 
     @GET
     @Path("players/{roomName}")
@@ -419,7 +468,10 @@ public class DixitConfigurationService {
         }
     }
 
-    private void checkIfPlayerNameExistsInRoom(BasicRequestDTO dto) throws SQLException, NamingException, DuplicateNameException {
+    private void checkIfPlayerNameExistsInRoom(BasicRequestDTO dto)
+            throws SQLException,
+            NamingException,
+            DuplicateNameException {
         PreparedStatement preparedStatement = getConnection().
                 prepareStatement(FIND_DUPLICATE_PLAYER_IN_ROOM_QUERY);
         preparedStatement.setString(1, dto.roomName);
@@ -437,5 +489,19 @@ public class DixitConfigurationService {
         }
     }
 
+    private void checkIfRoomIsFull(String roomName) throws SQLException, NamingException, RoomFullException {
+        PreparedStatement preparedStatement = getConnection().prepareStatement(CHECK_IF_ROOM_IS_FULL);
+        preparedStatement.setString(1, roomName);
 
+        ResultSet rs = preparedStatement.executeQuery();
+        int count = 0;
+        while (rs.next()) {
+            count = rs.getInt(1);
+        }
+
+        preparedStatement.close();
+        if (count == DIXIT_NUMBER_OF_PLAYERS_IN_ROOM){
+            throw new RoomFullException();
+        }
+    }
 }
