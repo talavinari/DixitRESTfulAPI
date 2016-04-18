@@ -1,8 +1,5 @@
 package rest;
 
-/**
- * Created by tal on 3/25/2016.
- */
 public class Player {
     String name;
     String index;

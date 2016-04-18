@@ -1,8 +1,5 @@
 package rest;
 
-/**
- * Created by tal on 3/25/2016.
- */
 public enum MessageType {
     JoinedToRoom("JOIN"), Vote("VOTE"), Association("ASSOCIATION"),
     PickedCard("PICKED"), DestroyRoom("Destroy");
